@@ -40,9 +40,14 @@ def ensure_ffmpeg():
         download_and_extract("ffprobe", ffprobe_url)
 
 # === 2. Function to download + convert ===
-def download_and_convert(url):
+def download_and_convert(urlOrName):
     ensure_ffmpeg()
 
+    # Check if it's a link or name
+    if "https://y" in urlOrName:
+        url = urlOrName
+    else:
+        url = f"ytsearch:{urlOrName}"  # Search instead of direct link
     # Download audio with yt-dlp
     webm_path_template = os.path.join(download_dir, "%(title)s.%(ext)s")
     ydl_opts = {
@@ -51,10 +56,14 @@ def download_and_convert(url):
         'quiet': False,
         'no_warnings': True
     }
-
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        webm_file = ydl.prepare_filename(info)
+
+        if 'entries' in info: #if there are multiple entries shown, pick the first one (this is for when searching by name)
+            info = info['entries'][0]
+            
+        webm_file = ydl.prepare_filename(info) #grabs and download the file into webm
 
     # Convert to MP3 using ffmpeg binary
     mp3_file = os.path.splitext(webm_file)[0] + ".mp3"
@@ -64,4 +73,5 @@ def download_and_convert(url):
     # Remove original .webm
     os.remove(webm_file)
     print(f"Done! MP3 saved to: {mp3_file}")
+
 
