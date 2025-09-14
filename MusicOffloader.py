@@ -4,6 +4,8 @@ import yt_dlp
 import ffmpeg
 import stat
 import zipfile
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3, APIC
 
 # === CONFIG ===
 download_dir = os.path.expanduser("~/Music")
@@ -39,7 +41,37 @@ def ensure_ffmpeg():
     if not os.path.exists(ffprobe_path):
         download_and_extract("ffprobe", ffprobe_url)
 
-# === 2. Function to download + convert ===
+# === 2. Add Metadata Function ===
+def add_metadata(mp3_file, title, uploader, thumbnail_url=None):
+    try:
+        audio = EasyID3(mp3_file)
+    except Exception:
+        audio = EasyID3()
+    
+    audio["title"] = title
+    audio["artist"] = uploader
+    audio["album"] = "YouTube Downloads"
+    audio.save(mp3_file)
+
+    # Add album art if available
+    if thumbnail_url:
+        try:
+            img_data = requests.get(thumbnail_url).content
+            tags = ID3(mp3_file)
+            tags.add(
+                APIC(
+                    encoding=3,
+                    mime="image/jpeg",
+                    type=3,
+                    desc=u"Cover",
+                    data=img_data
+                )
+            )
+            tags.save(mp3_file)
+        except Exception as e:
+            print(f"Could not add album art: {e}")
+
+# === 3. Function to download + convert + tag ===
 def download_and_convert(urlOrName):
     ensure_ffmpeg()
 
@@ -48,6 +80,7 @@ def download_and_convert(urlOrName):
         url = urlOrName
     else:
         url = f"ytsearch:{urlOrName}"  # Search instead of direct link
+
     # Download audio with yt-dlp
     webm_path_template = os.path.join(download_dir, "%(title)s.%(ext)s")
     ydl_opts = {
@@ -56,14 +89,14 @@ def download_and_convert(urlOrName):
         'quiet': False,
         'no_warnings': True
     }
-    
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
-        if 'entries' in info: #if there are multiple entries shown, pick the first one (this is for when searching by name)
+        if 'entries' in info:  # if searching by name
             info = info['entries'][0]
-            
-        webm_file = ydl.prepare_filename(info) #grabs and download the file into webm
+
+        webm_file = ydl.prepare_filename(info)
 
     # Convert to MP3 using ffmpeg binary
     mp3_file = os.path.splitext(webm_file)[0] + ".mp3"
@@ -72,6 +105,13 @@ def download_and_convert(urlOrName):
 
     # Remove original .webm
     os.remove(webm_file)
+
+    # Add metadata: title, uploader, album art
+    title = info.get("title", "Unknown Title")
+    uploader = info.get("uploader", "Unknown Artist")
+    thumbnail_url = info.get("thumbnail")
+    add_metadata(mp3_file, title, uploader, thumbnail_url)
+
     print(f"Done! MP3 saved to: {mp3_file}")
 
-
+download_and_convert("https://youtu.be/VOiag6G_zsM?si=1Sjy30VATUpr3Kz_")
