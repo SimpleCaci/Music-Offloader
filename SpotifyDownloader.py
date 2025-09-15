@@ -5,6 +5,7 @@ import ffmpeg
 import stat
 import zipfile
 import pandas as pd
+from urllib.parse import urlparse
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
 from SpotifyPlaylistGrabber import get_spotify_tracks, save_tracks_to_csv
@@ -16,7 +17,6 @@ ffmpeg_dir = os.path.expanduser("~/ffmpeg-bin")
 ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg")
 ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe")
 
-# URLs for macOS binaries
 ffmpeg_url = "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip"
 ffprobe_url = "https://evermeet.cx/ffmpeg/ffprobe-6.1.1.zip"
 
@@ -55,8 +55,18 @@ def ensure_ffmpeg():
     if not os.path.exists(ffprobe_path):
         download_and_extract("ffprobe", ffprobe_url)
 
+# === Helpers ===
+def is_valid_url(url):
+    try:
+        if not isinstance(url, str) or url.lower() == "nan" or not url.strip():
+            return False
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except Exception:
+        return False
+
 # === Add Metadata ===
-def add_metadata(mp3_file, title, artist, album, cover_url=None):
+def add_metadata(mp3_file, title, artist, album, cover_url=None, yt_thumbnail=None):
     try:
         audio = EasyID3(mp3_file)
     except Exception:
@@ -67,9 +77,16 @@ def add_metadata(mp3_file, title, artist, album, cover_url=None):
     audio["album"] = album
     audio.save(mp3_file)
 
-    if cover_url:
+    # Choose cover art: Spotify > YouTube > None
+    final_cover_url = None
+    if is_valid_url(cover_url):
+        final_cover_url = cover_url
+    elif is_valid_url(yt_thumbnail):
+        final_cover_url = yt_thumbnail
+
+    if final_cover_url:
         try:
-            img_data = requests.get(cover_url).content
+            img_data = requests.get(final_cover_url).content
             tags = ID3(mp3_file)
             tags.add(APIC(
                 encoding=3,
@@ -86,12 +103,11 @@ def add_metadata(mp3_file, title, artist, album, cover_url=None):
 def download_song_youtube(query, title, artist, album, album_dir, cover_url=None):
     ensure_ffmpeg()
 
-    # Build safe filename from Spotify metadata
+    # Build safe filename
     safe_filename = "".join(c for c in f"{title} - {artist}" if c.isalnum() or c in " -_").strip()
     mp3_output = os.path.join(album_dir, f"{safe_filename}.mp3")
     webm_output = os.path.join(album_dir, f"{safe_filename}.webm")
 
-    # Search or use direct URL
     url = query if "https://" in query else f"ytsearch:{query}"
 
     ydl_opts = {
@@ -104,20 +120,21 @@ def download_song_youtube(query, title, artist, album, album_dir, cover_url=None
     # Download from YouTube
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        if 'entries' in info:  # Search result returns list
+        if 'entries' in info:
             info = info['entries'][0]
+    yt_thumbnail = info.get("thumbnail", None)
 
-    # Convert to MP3 with ffmpeg
+    # Convert to MP3
     print(f"Converting {webm_output} → {mp3_output}")
     ffmpeg.input(webm_output).output(mp3_output, format='mp3').run(cmd=ffmpeg_path)
     os.remove(webm_output)
 
-    # Add metadata from Spotify
-    add_metadata(mp3_output, title, artist, album, cover_url)
+    # Add metadata
+    add_metadata(mp3_output, title, artist, album, cover_url, yt_thumbnail)
 
     print(f"Downloaded + tagged: {mp3_output}")
 
-# === Full Pipeline: Spotify → YouTube → MP3 ===
+# === Full Pipeline ===
 def run_pipeline(spotify_url):
     print("Fetching Spotify tracks...")
     tracks = get_spotify_tracks(spotify_url)
@@ -134,7 +151,7 @@ def run_pipeline(spotify_url):
         album_dir = os.path.join(base_download_dir, "".join(c for c in album if c.isalnum() or c in " -_").strip())
         os.makedirs(album_dir, exist_ok=True)
 
-        # Build YouTube query
+        # Download song
         query = f"{title} {artist} audio"
         download_song_youtube(query, title, artist, album, album_dir, cover_url)
 
