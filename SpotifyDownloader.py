@@ -1,5 +1,6 @@
 import os
 import requests
+import sys
 import yt_dlp
 import ffmpeg
 import stat
@@ -22,12 +23,18 @@ ffprobe_url = "https://evermeet.cx/ffmpeg/ffprobe-6.1.1.zip"
 
 # === Detect MP3 Player Path ===
 def find_mp3_player(mount_name):
-    volumes = "/Volumes"
-    for device in os.listdir(volumes):
-        if mount_name in device:
-            return os.path.join(volumes, device, "Music")
+    if sys.platform == "darwin":  # macOS
+        base_path = "/Volumes"
+        for device in os.listdir(base_path):
+            if mount_name in device:
+                return os.path.join(base_path, device, "Music")
+    elif sys.platform == "win32":  # Windows
+        from string import ascii_uppercase
+        drives = [f"{d}:/" for d in ascii_uppercase if os.path.exists(f"{d}:/")]
+        for drive in drives:
+            if mount_name.lower() in drive.lower():
+                return os.path.join(drive, "Music")
     return None
-
 base_download_dir = find_mp3_player(MP3_PLAYER_NAME) or local_fallback_dir
 os.makedirs(base_download_dir, exist_ok=True)
 
