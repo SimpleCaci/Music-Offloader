@@ -4,42 +4,74 @@ import yt_dlp
 import ffmpeg
 import stat
 import zipfile
+import shutil
+import sys
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
-
 # === CONFIG ===
 download_dir = os.path.expanduser("~/Music")
 ffmpeg_dir = os.path.expanduser("~/ffmpeg-bin")
-ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg")
-ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe")
 
-# URLs for macOS binaries
-ffmpeg_url = "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip"
-ffprobe_url = "https://evermeet.cx/ffmpeg/ffprobe-6.1.1.zip"
+# OS-specific URLs
+if sys.platform == "win32":  # Windows build
+    ffmpeg_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+    ffprobe_url = ffmpeg_url  # ffprobe comes with ffmpeg in same zip
+elif sys.platform == "darwin":  # macOS build
+    ffmpeg_url = "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip"
+    ffprobe_url = "https://evermeet.cx/ffmpeg/ffprobe-6.1.1.zip"
+else:  # Linux or others
+    ffmpeg_url = ""
+    ffprobe_url = ""
+
+# Correct paths depending on OS
+ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
 
 # === 1. Ensure ffmpeg + ffprobe installed ===
 def download_and_extract(name, url):
+    if not url:
+        print("Please install ffmpeg manually via apt or brew for this OS.")
+        return None
+
     os.makedirs(ffmpeg_dir, exist_ok=True)
     zip_path = os.path.join(ffmpeg_dir, name + ".zip")
-    binary_path = os.path.join(ffmpeg_dir, name)
 
-    if not os.path.exists(binary_path):
-        print(f"Downloading {name}...")
+    # Only download if not already present
+    if not os.path.exists(ffmpeg_path):
+        print(f"Downloading {name} for {platform.system()}...")
         r = requests.get(url)
         with open(zip_path, "wb") as f:
             f.write(r.content)
+
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(ffmpeg_dir)
         os.remove(zip_path)
-        os.chmod(binary_path, os.stat(binary_path).st_mode | stat.S_IEXEC)
 
-    return binary_path
+        # Windows builds: binaries are inside "ffmpeg-xxx/bin"
+        if sys.platform == "win32":
+            subfolders = [f for f in os.listdir(ffmpeg_dir) if os.path.isdir(os.path.join(ffmpeg_dir, f))]
+            if subfolders:
+                bin_path = os.path.join(ffmpeg_dir, subfolders[0], "bin")
+                for exe in ["ffmpeg.exe", "ffprobe.exe"]:
+                    src = os.path.join(bin_path, exe)
+                    dst = os.path.join(ffmpeg_dir, exe)
+                    if os.path.exists(src):
+                        shutil.move(src, dst)
+                shutil.rmtree(os.path.join(ffmpeg_dir, subfolders[0]))
+
+        # Mark binary executable
+        if os.path.exists(ffmpeg_path):
+            os.chmod(ffmpeg_path, os.stat(ffmpeg_path).st_mode | stat.S_IEXEC)
+
+    return ffmpeg_path
 
 def ensure_ffmpeg():
-    if not os.path.exists(ffmpeg_path):
-        download_and_extract("ffmpeg", ffmpeg_url)
-    if not os.path.exists(ffprobe_path):
+    download_and_extract("ffmpeg", ffmpeg_url)
+    if sys.platform == "darwin":  # Mac gets ffprobe separately
         download_and_extract("ffprobe", ffprobe_url)
+
+# Call this before using ffmpeg
+ensure_ffmpeg()
 
 # === 2. Add Metadata Function ===
 def add_metadata(mp3_file, title, uploader, thumbnail_url=None):

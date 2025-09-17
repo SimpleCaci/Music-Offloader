@@ -4,6 +4,12 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from spotify_scraper import SpotifyClient
 
+from dotenv import load_dotenv
+
+# Load variables from .env file
+load_dotenv()
+
+
 # === Spotify API Setup ===
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
@@ -115,7 +121,7 @@ def save_tracks_to_csv(tracks, filename="spotify_tracks.csv"):
 
 # === Example Usage ===
 if __name__ == "__main__":
-    spotify_url = "https://open.spotify.com/playlist/37i9dQZF1E393PuWkPIAWl"  # Daily Mix example
+    spotify_url = "https://open.spotify.com/playlist/37i9dQZF1EQnsJ0xmvpihE?si=p5qmbxJgQiqycz6wTThRwQ&pi=iqcukKGXQl6Ix&nd=1&dlsi=8c1cc660884f4353"  # Daily Mix example
     tracks = get_spotify_tracks(spotify_url)
     save_tracks_to_csv(tracks, "spotify_tracks.csv")
     scraper_client.close()
